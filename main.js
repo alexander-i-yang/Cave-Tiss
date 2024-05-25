@@ -91,6 +91,22 @@ const TILE_MAP =
     "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
     "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
 
+    "00 00 00 00 00 00 00 00 00 00 01 01 59 01 01 01 "+
+    "01 00 00 00 00 00 00 00 00 00 00 01 01 01 01 01 "+
+    "01 00 00 00 00 00 00 00 00 00 00 00 00 22 22 01 "+
+    "01 00 00 00 00 00 00 62 00 00 00 00 00 00 00 01 "+
+    "01 57 00 00 56 00 00 00 00 00 00 00 00 00 00 01 "+
+    "25 53 00 00 00 00 00 00 00 00 00 00 00 00 55 25 "+
+    "02 25 25 25 25 25 25 25 25 25 25 25 25 25 25 25 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
+    "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 "+
 
     "01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 "+
     "01 01 01 01 00 00 00 00 00 00 00 00 00 00 01 01 "+
@@ -98,12 +114,12 @@ const TILE_MAP =
     "01 01 00 00 00 00 00 00 00 00 00 01 01 00 01 01 "+
     "01 01 00 00 00 00 00 00 00 00 00 01 01 00 01 01 "+
     "01 01 00 00 61 00 00 00 00 00 00 01 01 00 01 01 "+
-    "01 00 00 00 00 00 00 00 20 20 00 01 01 00 01 01 "+
-    "01 00 00 00 00 00 01 01 01 01 01 01 01 00 01 01 "+
-    "01 01 01 00 00 00 22 22 22 22 22 01 01 00 00 60 "+
-    "01 01 01 01 00 00 00 00 00 00 00 01 01 00 00 00 "+
+    "01 00 00 00 00 00 00 00 00 20 00 01 01 00 01 01 "+
+    "01 00 00 00 00 00 00 00 00 01 01 01 01 00 01 01 "+
+    "01 01 01 00 00 00 00 00 00 00 22 01 01 00 00 60 "+
+    "01 01 01 01 00 00 00 00 01 00 00 01 01 00 00 00 "+
     "01 01 00 00 00 00 00 59 00 00 00 01 01 00 20 20 "+
-    "01 00 00 00 00 00 01 01 01 00 00 01 01 00 01 01 "+
+    "01 00 00 00 00 00 01 01 01 01 00 01 01 00 01 01 "+
     "01 00 00 00 00 00 01 01 01 00 00 01 01 00 00 01 "+
     "01 56 00 01 01 00 01 01 01 00 00 01 01 00 00 01 "+
     "01 01 01 01 01 20 01 01 01 01 01 01 01 00 00 01 "+
@@ -545,7 +561,8 @@ const Vector = ({ x, y }) => ({
     },
     scalarX(scalar) {return(Vector({x: this.x*scalar, y:this.y}));},
     // scalarY(scalar) {return(Vector({x: this.x, y:this.y*scalar}));},
-    scalar(s) {return(Vector({x: this.x*s, y:this.y*s}));}
+    scalar(s) {return(Vector({x: this.x*s, y:this.y*s}));},
+    dot(v) {return this.x * v.x + this.y * v.y;}
 });
 
 const VectorUp = Vector({x: 0, y: -1});
@@ -1418,7 +1435,8 @@ class Game {
                 (frame) => {return Math.round(spawnX+(mult*Math.sin(frame/60*2*Math.PI+angleOffset)));},
                 curLevel,
                 );
-            curLevel.pushDecoration(dust);
+
+            setTimeout(() => curLevel.pushDecoration(dust), Math.random()*500);
         }
     }
 
@@ -2129,6 +2147,7 @@ class PhysObj {
         this.collidable = collidable;
         this.velocity = Vector({x:0, y:0});
         this.sprite = null;
+        this.direction = direction;
     }
 
     getX() {return(this.hitbox.getX());}
@@ -2293,7 +2312,6 @@ class GroundDustSprite extends Decoration {
             8, 8, ), level
         );
         this.sprite.setRow(1);
-        this.direction = direction;
     }
     draw() {
         super.draw(this.x+this.direction*this.sprite.curCol, this.y);
@@ -2482,7 +2500,6 @@ class Spring extends Actor {
     constructor(x, y, w, h, direction, level) {
         super(x, y, w, h, true, level, direction);
         super.setSprite(new AnimatedSprite(SPRING_SPRITESHEET, direction, [{frames:0, onComplete:null}, {frames:16, onComplete:null}]));
-        this.direction = direction;
     }
 
     respawnClone(level) {
@@ -2524,7 +2541,13 @@ class PlayerKill extends Solid {
         super.setSprite(new Sprite(SPIKES_IMG, direction));
     }
 
-    onPlayerCollide() {return "kill";}
+    onPlayerCollide(velocity) {
+        if (velocity != null) {
+            if (velocity.dot(this.direction) <= 0) return "kill";
+            return "";
+        }
+        return "kill";
+    }
 
     draw() {
         // super.draw("#ff0000");
@@ -2541,6 +2564,7 @@ class Throwable extends Actor {
     constructor(x, y, w, h, level) {
         super(x, y, w, h, true, level);
         this.throwVelocity = Vector({x: 1.7, y: -1.5});
+        // this.throwVelocity = Vector({x: 3.7, y: 0});
         this.onCollide = this.onCollide.bind(this);
         this.squish = this.squish.bind(this);
         this.beingCarried = false;
@@ -2621,6 +2645,7 @@ class Throwable extends Actor {
                 if(playerCollideFunction === "") {
                     // physObj.incrY(-10, physObj.onCollide);
                 } else {
+                    console.log("ground");
                     this.setYVelocity(0);
                 }
             } else if(this.isOnTopOf(physObj)) {
@@ -2644,6 +2669,15 @@ class Throwable extends Actor {
     }
 
     pickUpFrames = 12;
+
+    getCarrying() {
+        let e = super.getLevel().checkCollide(this, VectorUp);
+        if (e != null) console.log(e);
+        if (e != null && e.onPlayerCollide() === "") {
+            return e;
+        }
+        return null;
+    }
 
     incrPickupFrames() {
         const player = super.getLevel().getPlayer();
@@ -2961,7 +2995,7 @@ class Player extends Actor {
     }
 
     onCollide(physObj) {
-        const playerCollideFunction = physObj.onPlayerCollide();
+        const playerCollideFunction = physObj.onPlayerCollide(this.velocity);
         if(playerCollideFunction === "kill" && this.isTouching(physObj.getHitbox()) && this.deathFrames === 0) {
             this.getLevel().killPlayer();
         } else if(playerCollideFunction === "spring") {
@@ -3201,7 +3235,6 @@ class Player extends Actor {
 class Button extends Solid {
     constructor(x, y, w, h, direction, level, onPush) {
         super(x, y, w, h, true, level);
-        this.direction = direction;
         this.onPush = onPush;
         this.pushed = false;
     }
