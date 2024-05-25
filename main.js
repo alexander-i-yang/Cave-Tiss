@@ -73,11 +73,6 @@ const SECRET_CODES = [
 	"bac4e3"  //unclemistersir (the dev)
 ];
 
-const TILE_MAP_SIZE = [16, 16];
-const TILE_SIZE = PIXEL_GAME_SIZE[0] / TILE_MAP_SIZE[0];
-const TILEMAP_ARR = TILE_MAP.split(" ");
-const TILES_IN_LEVEL = TILE_MAP_SIZE[0] * TILE_MAP_SIZE[1];
-const NUM_LEVELS = (TILEMAP_ARR.length - 1) / TILES_IN_LEVEL;
 const PIXEL_LETTERS = {
 	'A': [
 		[, 1],
@@ -1298,7 +1293,6 @@ class Game {
 		this.secondsUntilBat = Math.round(Math.random() * 10 + 5);
 		this.cheated = false;
 		this.emptySquareData = {x: -1, y: -1, rad: -1, color: null};
-		this.getCurrentLevel().currentSpawn = this.getCurrentLevel().spawns[0];
 		this.getCurrentLevel().resetStage();
 	}
 
@@ -1659,7 +1653,7 @@ class Level {
 		let curTileMapInd = 0;
 		this.game = game;
 		this.nextDirection = Direction.NULL;
-		this.spawns = [];
+		this.spawns = {};
 		this.curSpawn;
 
 		convertWallTiles(tileArr);
@@ -1736,8 +1730,9 @@ class Level {
 							}
 							break;
 						case 16:
-							this.spawns.push(new Spawn(gameSpaceX + 1, gameSpaceY, tileCode % 4))
-
+							const dir = codeToDirection(tileCode % 4);
+							this.spawns[dir] = new Spawn(gameSpaceX + 1, gameSpaceY);
+							break;
 						default:
 							break;
 					}
@@ -1750,9 +1745,7 @@ class Level {
 	}
 
 	setCurrentSpawn(direction) {
-		// console.log(direction);
-		// this.currentSpawn = this.spawns[direction];
-		this.currentSpawn = this.spawns[0];
+		this.currentSpawn = this.spawns[direction];
 	}
 
 	drawAll() {
@@ -1932,7 +1925,6 @@ class Level {
 		let newActors = [];
 		this.game.respawn();
 		this.actors.forEach(actor => {
-			console.log(actor);
 			const newActor = actor.respawnClone(this);
 			newActors.push(newActor);
 			if (actor.onPlayerCollide().includes("throwable")) {
@@ -1940,6 +1932,10 @@ class Level {
 			}
 			if (actor.onPlayerCollide() === "") this.player = newActor;
 		});
+
+		if (this.currentSpawn == null) {
+			this.currentSpawn = Object.values(this.spawns)[0];
+		}
 
 		if (this.player == null) {
 			this.player = new Player(this.currentSpawn.x - 1, this.currentSpawn.y + 2, 6, 6, this);
@@ -1994,9 +1990,9 @@ class Level {
 	}
 
 	nextLevelDir() {
-		if (this.player.getX() <= 0) return Direction.EAST;
+		if (this.player.getX() <= 0) return Direction.WEST;
 		if (this.player.getY() <= 0) return Direction.NORTH;
-		if (this.player.getX() + this.player.getWidth() >= PIXEL_GAME_SIZE[0]) return Direction.WEST;
+		if (this.player.getX() + this.player.getWidth() >= PIXEL_GAME_SIZE[0]) return Direction.EAST;
 		if (this.player.getY() > PIXEL_GAME_SIZE[1]) return Direction.SOUTH;
 		return Direction.NULL;
 	}
@@ -2627,10 +2623,9 @@ class SpringDustSprite extends Decoration {
 }
 
 class Spawn {
-	constructor(x, y, directionCode) {
+	constructor(x, y) {
 		this.x = x;
 		this.y = y;
-		this.directionCode = directionCode;
 	}
 }
 
@@ -3276,7 +3271,6 @@ class Player extends Actor {
 		this.deathFrames = 0;
 		this.spawned = false;
 		this.wasOnGround = null;
-		console.log(x, y);
 	}
 
 	kill(x, y) {
@@ -3583,7 +3577,7 @@ class Button extends Solid {
 	}
 }
 
-import {TILE_MAP, Direction, navigateMap} from './levels.js';
+import {TILE_MAP, Direction, navigateMap, codeToDirection, TILE_SIZE, TILE_MAP_SIZE, TILEMAP_ARR, NUM_LEVELS, TILES_IN_LEVEL} from './levels.js';
 
 const game = new Game(TILE_MAP);
 
