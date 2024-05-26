@@ -18,6 +18,7 @@ const CTX = canvas.getContext("2d");
 const PLAYER_GRAVITY_UP = 0.20;
 const PLAYER_GRAVITY_DOWN = 0.12;
 const PLAYER_JUMP_V = -2.5;
+const PLAYER_HITBOX_PIXEL_SIZE = [6,6];
 const MAXFALL = 3;
 const SPRING_SCALAR = 3.1;
 
@@ -1296,6 +1297,10 @@ class Game {
         this.getCurrentLevel().resetStage();
 
         this.fellFromHeight = 0;
+
+        this.unlocks = {
+            JUMP: false,
+        }
     }
 
     getCurrentLevel() {
@@ -1325,11 +1330,19 @@ class Game {
         }
     }
 
-    onBigButtonPush() {
-        console.log("big psh");
+    onBigButtonPush(curHeight) {
+        console.log(this.unlocks);
+        switch (curHeight) {
+            case 1:
+                console.log(this.unlocks);
+                this.unlocks.JUMP = true;
+                break;
+        }
     }
 
-    resetFellHeight() {this.fellFromHeight = this.getCurrentLevel().height;}
+    resetFellHeight() {
+        this.fellFromHeight = this.getCurrentLevel().height;
+    }
 
     tick() {
         if (timeDelta === 0) lastTime = window.performance.now();
@@ -1441,12 +1454,11 @@ class Game {
         }
     }
 
-    nextLevel(direction) {
-        // this.setLevel(this.levelInd+1);
-        this.setLevel(navigateMap(this.levelInd, direction), direction)
+    nextLevel(direction, playerPos) {
+        this.setLevel(navigateMap(this.levelInd, direction), direction, playerPos)
     }
 
-    setLevel(ind, direction) {
+    setLevel(ind, direction, playerPos) {
         this.levelInd = ind;
         /*if(this.levelInd > 0 && this.levelInd < 11) {
             if(audioCon.curSong._src !== STAGE1_MUSIC._src && audioCon.curSong._src !== BEGINNING_MUSIC._src) {audioCon.playSong(STAGE1_MUSIC);}
@@ -1455,8 +1467,8 @@ class Game {
             if(audioCon.curSong._src !== STAGE2_MUSIC._src) {audioCon.stopSong(); audioCon.playSong(STAGE2_MUSIC);}
             else {audioCon.queueSong(STAGE2_MUSIC);}
         }*/
-        this.getCurrentLevel().setCurrentSpawn(direction);
-        this.getCurrentLevel().resetStage();
+        this.getCurrentLevel().setCurrentSpawn(direction, playerPos);
+        this.getCurrentLevel().resetStage(true);
         this.respawn();
         if (this.onLastLevel()) {
             this.scoreboardRect.pos = Vector({x: 46, y: 94});
@@ -1662,6 +1674,7 @@ class Level {
         this.nextDirection = Direction.NULL;
         this.spawns = {};
         this.curSpawn;
+        this.swtichBlocks = [];
 
         convertWallTiles(tileArr);
 
@@ -1705,7 +1718,7 @@ class Level {
                     case 14:
                         switch (tileCode) {
                             case 56:
-                                this.solids.push(new Button(gameSpaceX, gameSpaceY + 5, 8, 3, this, this.onButtonPush))
+                                this.solids.push(new Button(gameSpaceX, gameSpaceY + 5, 8, 3, this, () => this.onButtonPush()))
                                 // this.player = new Player(gameSpaceX+1, gameSpaceY+2, TILE_SIZE - 2, TILE_SIZE - 2, this);
                                 // this.actors.push(this.player);
                                 break;
@@ -1739,14 +1752,27 @@ class Level {
                         break;
                     case 16:
                         const dir = codeToDirection(tileCode % 4);
-                        this.spawns[dir] = new Spawn(gameSpaceX + 1, gameSpaceY);
+                        // this.spawns[dir] = new Spawn(gameSpaceX + 1, gameSpaceY);
                         break;
                     case 17:
-                        this.solids.push(new BigButton(gameSpaceX, gameSpaceY-4, 8*4, 12, this, this.getGame().onBigButtonPush));
+                        this.solids.push(new BigButton(
+                            gameSpaceX,
+                            gameSpaceY - 4,
+                            8 * 4, 12,
+                            this,
+                            (h) => this.getGame().onBigButtonPush(h)
+                        ));
+                        break;
+                    case 18:
+                        const s = new SwitchBlock(gameSpaceX, gameSpaceY, 8, 8, true, this, null)
+                        this.swtichBlocks.push(s);
+                        this.solids.push(s);
+                        break;
                     case 64:
                         //Meta
                         const height = tileCode % 4;
                         this.height = height;
+                        break;
                     default:
                         break;
                 }
@@ -1757,8 +1783,28 @@ class Level {
         this.opacity = 0;
     }
 
-    setCurrentSpawn(direction) {
-        this.currentSpawn = this.spawns[direction];
+    setCurrentSpawn(direction, playerPos) {
+        let x = playerPos.x, y = playerPos.y;
+        switch (direction) {
+            case Direction.NORTH:
+                y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 1;
+                break;
+            case Direction.SOUTH:
+                y = 1;
+                break;
+            case Direction.WEST:
+                x = PIXEL_GAME_SIZE[0] - PLAYER_HITBOX_PIXEL_SIZE[0] - 1;
+                break;
+            case Direction.EAST:
+                x = 1;
+                break;
+            default:
+                console.log("Error: bad direction");
+                break;
+        }
+
+        this.currentSpawn = Vector({x:x, y:y});
+        //this.currentSpawn = this.spawns[direction];
     }
 
     drawAll() {
@@ -1810,7 +1856,7 @@ class Level {
     }
 
     onButtonPush() {
-        console.log("Hello");
+        this.swtichBlocks.forEach(s => s.deactivate());
     }
 
     pushDecoration(d) {
@@ -1850,10 +1896,12 @@ class Level {
 
         if (nextLevelDir && this.endLevelFrames === 0) {
             this.nextDirection = this.nextLevelDir();
-            this.endLevelFrames = 32;
+            this.nextLevelPlayerPos = this.getPlayer().getPos();
+            this.game.nextLevel(this.nextDirection, this.nextLevelPlayerPos);
+            // this.endLevelFrames = 32;
         }
         if (this.endLevelFrames === 1) {
-            this.game.nextLevel(this.nextDirection);
+            this.game.nextLevel(this.nextDirection, this.nextLevelPlayerPos);
             this.nextDirection = Direction.NULL;
             this.endLevelFrames = 0;
         }
@@ -1934,7 +1982,7 @@ class Level {
         return ret;
     }
 
-    resetStage() {
+    resetStage(transitioning) {
         let newActors = [];
         this.game.respawn();
         this.actors.forEach(actor => {
@@ -1943,17 +1991,26 @@ class Level {
             if (actor.onPlayerCollide().includes("throwable")) {
                 this.throwable = newActor;
             }
-            if (actor.onPlayerCollide() === "") this.player = newActor;
+            if (actor.onPlayerCollide() === "") {
+                this.player = newActor;
+            }
         });
 
         if (this.currentSpawn == null) {
-            this.currentSpawn = Object.values(this.spawns)[0];
+            this.currentSpawn = Vector({x: 9, y: 104});
         }
 
         if (this.player == null) {
-            this.player = new Player(this.currentSpawn.x - 1, this.currentSpawn.y + 2, 6, 6, this);
+            // this.player = new Player(this.currentSpawn.x - 1, this.currentSpawn.y + 2, 6, 6, this);
+            console.log(this.currentSpawn);
+            this.player = new Player(this.currentSpawn.x, this.currentSpawn.y, PLAYER_HITBOX_PIXEL_SIZE[0], PLAYER_HITBOX_PIXEL_SIZE[1], this);
             newActors.push(this.player);
         }
+
+        if (transitioning) this.player.respawnFrames = 0;
+        this.player.setX(this.currentSpawn.x);
+        this.player.setY(this.currentSpawn.y);
+        this.player.spawn = this.currentSpawn;
 
         this.endLevelFrames = 0;
         this.actors = newActors;
@@ -2321,6 +2378,10 @@ class PhysObj {
         this.collidable = collidable;
         this.velocity = Vector({x: 0, y: 0});
         this.sprite = null;
+    }
+
+    getPos() {
+        return Vector({x: this.hitbox.getX(), y: this.hitbox.getY()});
     }
 
     getX() {
@@ -3324,7 +3385,8 @@ class Player extends Actor {
                     this.jumpJustPressed = 0;
                     this.xJustPressed = 0;
                 }
-            } else if(this.isOnTopOf(physObj)) {
+            } else if (this.isOnTopOf(physObj) && physObj.collidable) {
+                console.log("e");
                 this.setYVelocity(0);
                 this.getGame().resetFellHeight();
             }
@@ -3459,7 +3521,7 @@ class Player extends Actor {
                 this.sprite.setRow(2);
             }
 
-            const zPressed = keys["KeyZ"] && !this.prevZKey;
+            const zPressed = this.getGame().unlocks.JUMP && keys["KeyZ"] && !this.prevZKey;
             const xPressed = keys["KeyX"] && !this.prevXKey;
             //If z is pressed, jjp = 8, otherwise decr jjp if jjp > 0
             if (zPressed) {
@@ -3566,6 +3628,17 @@ class Player extends Actor {
 
 }
 
+class SwitchBlock extends Solid {
+    draw() {
+        if (this.collidable) super.draw("#eeaaaa");
+        else super.draw("#50505080");
+    }
+
+    deactivate() {
+        this.collidable = false;
+    }
+}
+
 class Button extends Solid {
     constructor(x, y, w, h, level, onPush) {
         super(x, y, w, h, true, level);
@@ -3582,6 +3655,7 @@ class Button extends Solid {
             super.collidable = false;
             this.pushed = true;
             this.onPush();
+            this.collidable = false;
         }
     }
 
@@ -3604,10 +3678,27 @@ class BigButton extends Button {
         if (heightFall >= this.curHeightFall) {
             //super.push();
             this.curHeightFall++;
-            this.onPush();
-            this.setHeight(this.hitboxHeights[this.curHeightFall]);
-            this.setY(this.startPos.y + this.hitboxHeights[0] - this.getHeight());
+            this.onPush(this.curHeightFall);
+            this.setHeight(this.baseHeight());
         }
+    }
+
+    updatePhysicsPos() {
+        super.updatePhysicsPos();
+        /*if (this.isUnder(this.getLevel().getPlayer())) {
+            this.setHeight(this.baseHeight()-1);
+        } else {
+            this.setHeight(this.baseHeight());
+        }*/
+    }
+
+    baseHeight() {
+        return this.hitboxHeights[this.curHeightFall]
+    }
+
+    setHeight(h) {
+        super.setHeight(h);
+        this.setY(this.startPos.y + this.hitboxHeights[0] - this.getHeight());
     }
 
     onPlayerCollide() {
