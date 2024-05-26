@@ -18,7 +18,7 @@ const CTX = canvas.getContext("2d");
 const PLAYER_GRAVITY_UP = 0.20;
 const PLAYER_GRAVITY_DOWN = 0.12;
 const PLAYER_JUMP_V = -2.5;
-const PLAYER_HITBOX_PIXEL_SIZE = [6,6];
+const PLAYER_HITBOX_PIXEL_SIZE = [6, 6];
 const MAXFALL = 3;
 const SPRING_SCALAR = 3.1;
 
@@ -1271,6 +1271,7 @@ class Game {
     constructor(tilemap) {
         this.levels = [];
         this.startTime = window.performance.now();
+        this.lastFacing = VectorRight;
         for (let levelInd = 0; levelInd < NUM_LEVELS; levelInd++) {
             let level = null;
             const sliceArr = TILEMAP_ARR.slice(levelInd * TILES_IN_LEVEL, (levelInd + 1) * TILES_IN_LEVEL);
@@ -1408,9 +1409,15 @@ class Game {
             if (keys["KeyO"] && !this.prevO) {
                 this.getPlayer().debugFlying = !this.getPlayer().debugFlying;
             }
-            if (keys["KeyH"] && !this.prevH) {this.unlocks.JUMP = !this.unlocks.JUMP;}
-            if (keys["KeyJ"] && !this.prevJ) {this.unlocks.SLIDE = !this.unlocks.SLIDE;}
-            if (keys["KeyI"] && !this.prevI) {this.getCurrentLevel().onButtonPush();}
+            if (keys["KeyH"] && !this.prevH) {
+                this.unlocks.JUMP = !this.unlocks.JUMP;
+            }
+            if (keys["KeyJ"] && !this.prevJ) {
+                this.unlocks.SLIDE = !this.unlocks.SLIDE;
+            }
+            if (keys["KeyI"] && !this.prevI) {
+                this.getCurrentLevel().onButtonPush();
+            }
             this.prevO = keys["KeyO"];
             this.prevH = keys["KeyH"];
             this.prevJ = keys["KeyJ"];
@@ -1706,7 +1713,7 @@ class Level {
                         this.solids.push(new Wall(gameSpaceX, gameSpaceY, TILE_SIZE, TILE_SIZE, this, tilesheet, vec));
                         break;
                     case 5:
-                        this.solids.push(new PlayerKill(gameSpaceX+1, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE-2, 2, this, direction));
+                        this.solids.push(new PlayerKill(gameSpaceX + 1, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE - 2, 2, this, direction));
                         break;
                     case 6:
                     case 7:
@@ -1781,7 +1788,7 @@ class Level {
                                 //this.solids.push(new Button(gameSpaceX, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
                                 break;
                             case 74:
-                                this.solids.push(new Button(gameSpaceX+5, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
+                                this.solids.push(new Button(gameSpaceX + 5, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
                                 break;
                             case 75:
                                 const s = new SwitchBlock(gameSpaceX, gameSpaceY, 8, 8, true, this, null)
@@ -1825,7 +1832,7 @@ class Level {
                 break;
         }
 
-        this.currentSpawn = Vector({x:x, y:y});
+        this.currentSpawn = Vector({x: x, y: y});
         //this.currentSpawn = this.spawns[direction];
     }
 
@@ -2034,6 +2041,8 @@ class Level {
         this.player.setX(this.currentSpawn.x);
         this.player.setY(this.currentSpawn.y);
         this.player.spawn = this.currentSpawn;
+        this.player.facing = this.game.lastFacing;
+        console.log(this.game);
 
         this.endLevelFrames = 0;
         this.actors = newActors;
@@ -3389,6 +3398,8 @@ class Player extends Actor {
         this.spawned = false;
         this.wasOnGround = null;
 
+        this.sliding = false;
+
         this.debugFlying = false;
     }
 
@@ -3417,8 +3428,7 @@ class Player extends Actor {
         if (playerCollideFunction === "spring") {
             physObj.bounceObj(this);
         } else if (playerCollideFunction.includes("wall") && physObj.collidable) {
-            if (physObj.collidable && physObj.isOnTopOf(this)
-                || (this.carrying && physObj.isOnTopOf(this.carrying))) {
+            if (physObj.collidable && physObj.isOnTopOf(this) || (this.carrying && physObj.isOnTopOf(this.carrying))) {
                 if (playerCollideFunction.includes("throwable")) {
                     if (playerCollideFunction.includes("sticky") && physObj.stuck) {
                         this.setYVelocity(0);
@@ -3435,6 +3445,8 @@ class Player extends Actor {
             } else if (this.isOnTopOf(physObj)) {
                 this.setYVelocity(0);
                 this.getGame().resetFellHeight();
+            } else if (this.isLeftOf(physObj) || this.isRightOf(physObj)) {
+                this.sliding = false;
             }
         } else if (playerCollideFunction === "kill" && this.isTouching(physObj.getHitbox()) && this.deathFrames === 0) {
             this.getLevel().killPlayer();
@@ -3503,7 +3515,7 @@ class Player extends Actor {
         this.getLevel().killPlayer();
     }
 
-    respawnClone(level) {
+    respawnClone(level, facing) {
         return new Player(this.spawn.x, this.spawn.y, this.origW, this.origH, level);
     }
 
@@ -3571,19 +3583,29 @@ class Player extends Actor {
 
         const onGround = this.isOnGround();
         const slidePressed = keys["KeyX"] && this.getGame().unlocks.SLIDE;
+
+        if (onGround && slidePressed) {
+            this.sliding = true;
+            this.setXVelocity(this.facing.x * 2);
+        } else if (!onGround && !slidePressed) {
+            this.sliding = false;
+        }
+
         if (this.respawnFrames === 0 && this.deathFrames === 0) {
             if (keys["KeyR"]) {
                 this.getLevel().killPlayer();
             }
-            if (keys["ArrowRight"]) {
-                if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
-                this.setXVelocity(slidePressed ? 2 : 1);
-            } else if (keys["ArrowLeft"]) {
-                if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
-                this.setXVelocity(slidePressed ? -2 : -1);
-            } else {
-                this.setXVelocity(0);
-                if (onGround) this.sprite.setRow(0);
+            if (!this.sliding) {
+                if (keys["ArrowRight"]) {
+                    if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
+                    this.setXVelocity(1);
+                } else if (keys["ArrowLeft"]) {
+                    if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
+                    this.setXVelocity(-1);
+                } else {
+                    this.setXVelocity(0);
+                    if (onGround) this.sprite.setRow(0);
+                }
             }
             if (!onGround && this.sprite.getRow() !== 2) {
                 this.sprite.setRow(2);
@@ -3688,6 +3710,7 @@ class Player extends Actor {
                 this.facing = VectorLeft;
                 this.getSprite().flip = false;
             }
+            this.getGame().lastFacing = this.facing;
         }
     }
 
@@ -3751,7 +3774,7 @@ class BigButton extends Button {
         const heightFall = this.getGame().fellFromHeight;
         if (heightFall >= this.curHeightFall) {
             //super.push();
-            this.curHeightFall = heightFall+1;
+            this.curHeightFall = heightFall + 1;
             this.onPush(this.curHeightFall);
             this.setHeight(this.baseHeight());
         }
