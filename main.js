@@ -1300,6 +1300,7 @@ class Game {
 
         this.unlocks = {
             JUMP: false,
+            SLIDE: false,
         }
     }
 
@@ -1331,10 +1332,10 @@ class Game {
     }
 
     onBigButtonPush(curHeight) {
-        console.log(this.unlocks);
         switch (curHeight) {
+            case 2:
+                this.unlocks.SLIDE = true;
             case 1:
-                console.log(this.unlocks);
                 this.unlocks.JUMP = true;
                 break;
         }
@@ -1404,17 +1405,18 @@ class Game {
 
     setKeys(keys) {
         if (!optionsCon.showing) {
-            if (keys["KeyO"] && !this.prevA) {
-                this.nextLevel();
+            if (keys["KeyO"] && !this.prevO) {
+                this.getPlayer().debugFlying = !this.getPlayer().debugFlying;
             }
-            if (keys["KeyP"] && !this.prevS) {
-                this.levelInd -= 1;
-                this.getCurrentLevel().getPlayer().setX(10);
-                this.getCurrentLevel().killPlayer();
-            }
-            this.prevA = keys["KeyO"];
+            if (keys["KeyH"] && !this.prevH) {this.unlocks.JUMP = !this.unlocks.JUMP;}
+            if (keys["KeyJ"] && !this.prevJ) {this.unlocks.SLIDE = !this.unlocks.SLIDE;}
+            if (keys["KeyI"] && !this.prevI) {this.getCurrentLevel().onButtonPush();}
+            this.prevO = keys["KeyO"];
+            this.prevH = keys["KeyH"];
+            this.prevJ = keys["KeyJ"];
+            this.prevI = keys["KeyI"];
             this.prevS = keys["KeyP"];
-            if (keys["KeyC"]) {
+            if (keys["KeyQ"]) {
                 this.scoreboardFrames += 1;
             }
             this.getCurrentLevel().setKeys(keys);
@@ -1469,6 +1471,8 @@ class Game {
         }*/
         this.getCurrentLevel().setCurrentSpawn(direction, playerPos);
         this.getCurrentLevel().resetStage(true);
+        if (direction === Direction.NORTH) this.getPlayer().setYVelocity(-0.5);
+
         this.respawn();
         if (this.onLastLevel()) {
             this.scoreboardRect.pos = Vector({x: 46, y: 94});
@@ -1674,7 +1678,8 @@ class Level {
         this.nextDirection = Direction.NULL;
         this.spawns = {};
         this.curSpawn;
-        this.swtichBlocks = [];
+        this.switchBlocks = [];
+        this.buttons = [];
 
         convertWallTiles(tileArr);
 
@@ -1701,7 +1706,7 @@ class Level {
                         this.solids.push(new Wall(gameSpaceX, gameSpaceY, TILE_SIZE, TILE_SIZE, this, tilesheet, vec));
                         break;
                     case 5:
-                        this.solids.push(new PlayerKill(gameSpaceX, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE, 2, this, direction));
+                        this.solids.push(new PlayerKill(gameSpaceX+1, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE-2, 2, this, direction));
                         break;
                     case 6:
                     case 7:
@@ -1718,7 +1723,6 @@ class Level {
                     case 14:
                         switch (tileCode) {
                             case 56:
-                                this.solids.push(new Button(gameSpaceX, gameSpaceY + 5, 8, 3, this, () => this.onButtonPush()))
                                 // this.player = new Player(gameSpaceX+1, gameSpaceY+2, TILE_SIZE - 2, TILE_SIZE - 2, this);
                                 // this.actors.push(this.player);
                                 break;
@@ -1760,13 +1764,31 @@ class Level {
                             gameSpaceY - 4,
                             8 * 4, 12,
                             this,
-                            (h) => this.getGame().onBigButtonPush(h)
+                            (h) => {
+                                this.getGame().onBigButtonPush(h)
+                            }
                         ));
                         break;
                     case 18:
-                        const s = new SwitchBlock(gameSpaceX, gameSpaceY, 8, 8, true, this, null)
-                        this.swtichBlocks.push(s);
-                        this.solids.push(s);
+                        switch (tileCode) {
+                            case 72:
+                                const button = new Button(gameSpaceX, gameSpaceY + 5, 8, 3, this, () => this.onButtonPush());
+                                this.solids.push(button);
+                                this.buttons.push(button);
+                                break;
+                            case 73:
+                                this.solids.push(new Semisolid(gameSpaceX, gameSpaceY, 8, 3, true, this));
+                                //this.solids.push(new Button(gameSpaceX, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
+                                break;
+                            case 74:
+                                this.solids.push(new Button(gameSpaceX+5, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
+                                break;
+                            case 75:
+                                const s = new SwitchBlock(gameSpaceX, gameSpaceY, 8, 8, true, this, null)
+                                this.switchBlocks.push(s);
+                                this.solids.push(s);
+                                break;
+                        }
                         break;
                     case 64:
                         //Meta
@@ -1787,7 +1809,7 @@ class Level {
         let x = playerPos.x, y = playerPos.y;
         switch (direction) {
             case Direction.NORTH:
-                y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 1;
+                y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 9;
                 break;
             case Direction.SOUTH:
                 y = 1;
@@ -1817,7 +1839,7 @@ class Level {
         this.actors.forEach(item => {
             item.draw();
         });
-        this.throwable.draw();
+        if (this.throwable) this.throwable.draw();
         this.player.draw();
         this.dustSprites.forEach(i => i.draw());
         this.drawFade();
@@ -1856,7 +1878,8 @@ class Level {
     }
 
     onButtonPush() {
-        this.swtichBlocks.forEach(s => s.deactivate());
+        this.switchBlocks.forEach(s => s.deactivate());
+        this.buttons.forEach(b => b.deactivate());
     }
 
     pushDecoration(d) {
@@ -1997,12 +2020,12 @@ class Level {
         });
 
         if (this.currentSpawn == null) {
-            this.currentSpawn = Vector({x: 9, y: 104});
+            // this.currentSpawn = Vector({x: 9, y: 104});
+            this.currentSpawn = Vector({x: 9, y: 110});
         }
 
         if (this.player == null) {
             // this.player = new Player(this.currentSpawn.x - 1, this.currentSpawn.y + 2, 6, 6, this);
-            console.log(this.currentSpawn);
             this.player = new Player(this.currentSpawn.x, this.currentSpawn.y, PLAYER_HITBOX_PIXEL_SIZE[0], PLAYER_HITBOX_PIXEL_SIZE[1], this);
             newActors.push(this.player);
         }
@@ -2028,7 +2051,7 @@ class Level {
     }
 
     isTouchingThrowable(physObj) {
-        return (physObj.isTouching(this.throwable.getHitbox()));
+        return this.throwable && (physObj.isTouching(this.throwable.getHitbox()));
     }
 
     getSolids() {
@@ -2086,7 +2109,7 @@ class Level {
     constructor(tileArr, game) {
         super(tileArr, game);
         this.player.respawnFrames = 0;
-        this.keyOrder = ["KeyX","KeyZ","KeyX"];
+        this.keyOrder = ["KeyC","KeyZ","KeyC"];
         this.keyOrderInd = 0;
 
         this.startAnimFrames = 0;
@@ -2108,22 +2131,22 @@ class Level {
 
     setKeys(keys) {
         const z = keys["KeyZ"];
-        const x = keys["KeyX"];
+        const x = keys["KeyC"];
         const checkKey = this.keyOrder[this.keyOrderInd];
         if(!checkKey && this.startAnimFrames === 0) {this.startAnimFrames = START_ANIM_FRAMES;}
         let k = {
             "KeyZ": 0,
-            "KeyX": 0,
+            "KeyC": 0,
             "ArrowRight": this.startAnimFrames > 0 ? 1 : 0
         };
-        if(keys[checkKey] && !(checkKey === "KeyX" ? this.prevX : this.prevZ)) {
+        if(keys[checkKey] && !(checkKey === "KeyC" ? this.prevX : this.prevZ)) {
             k[checkKey] = 1;
             this.keyOrderInd += 1;
         }
         const p = this.getPlayer();
         const th = this.getThrowable();
         if(this.startAnimFrames > 0 && p.isTouching(th.getHitbox()) && p.carrying !== th) {
-            k["KeyX"] = 1;
+            k["KeyC"] = 1;
         }
         super.setKeys(k);
 
@@ -2313,7 +2336,7 @@ class EndScreen extends Level {
             this.endWalkFrames -= 1;
         }
         this.player.draw();
-        this.throwable.draw();
+        if (this.throwable) this.throwable.draw();
 
         CTX.drawImage(TITLE_IMG, 10 + game.cameraOffset.x, 134 + game.cameraOffset.y);
         let textPos = Vector({x: 16, y: 144});
@@ -2359,7 +2382,7 @@ class EndScreen extends Level {
                 "ArrowRight": 0,
                 "ArrowLeft": 0,
                 "KeyZ": 0,
-                "KeyX": 0,
+                "KeyC": 0,
             };
             super.setKeys(k);
         }
@@ -2745,6 +2768,7 @@ class Actor extends PhysObj {
             const carryingObj = this.getCarrying();
             while (remainder !== 0) {
                 let collideObj = this.collideOffset(direction);
+                // console.log(collideObj);
                 if (collideObj && collideObj !== carryingObj) {
                     const shouldBreak = onCollide(collideObj);
                     if (shouldBreak) {
@@ -2857,6 +2881,17 @@ class Wall extends Solid {
     }
 }
 
+class Semisolid extends Solid {
+    draw() {
+        super.draw("#2b180d");
+    }
+
+    onPlayerCollide() {
+        // if (this.getLevel().getPlayer().isOnTopOf(this)) return "nah";
+        return "wall";
+    }
+}
+
 class Ice extends Solid {
     constructor(x, y, w, h, level, tilesheet, tileVec) {
         super(x, y, w, h, true, level);
@@ -2873,9 +2908,19 @@ class Ice extends Solid {
 }
 
 function rotateRect(x, y, w, h, direction) {
+    const xgrid = x - x % TILE_SIZE, ygrid = y - y % TILE_SIZE;
+
+    let newX = x;
+    if (direction.x === -1) newX = xgrid + TILE_SIZE - h;
+    else if (direction.x === 1) newX = xgrid;
+
+    let newY = direction === VectorUp ? y : y + h - TILE_SIZE;
+    if (direction.x === -1) newY = ygrid + x - xgrid;
+    if (direction.x === 1) newY = ygrid + x - xgrid;
+
     return {
-        newX: direction === VectorLeft ? x + TILE_SIZE - h : x,
-        newY: direction === VectorUp ? y : y + h - TILE_SIZE,
+        newX: newX,
+        newY: newY,
         newW: direction.x === 0 ? w : h,
         newH: direction.x === 0 ? h : w
     };
@@ -3018,7 +3063,7 @@ class Throwable extends Actor {
         if (playerCollideFunction === "spring") {
             physObj.bounceObj(this);
             this.touchedIce = true;
-        } else if (playerCollideFunction.includes("wall")) {
+        } else if (playerCollideFunction.includes("wall") && physObj.collidable) {
             if (physObj.isOnTopOf(this)) {
                 //Bonk head
                 if (playerCollideFunction === "") {
@@ -3169,7 +3214,7 @@ class StickyThrowable extends Throwable {
             // return true;
             // this.velocity.y = -3;
             // physObj.bounce();
-        } else if (playerCollideFunction.includes("wall")) {
+        } else if (playerCollideFunction.includes("wall") && physObj.collidable) {
             if (this.isOverlap(physObj, VectorZero)) {
                 //Must have tunneled through the wall bc of a spike
                 const px = physObj.getX();
@@ -3343,6 +3388,8 @@ class Player extends Actor {
         this.deathFrames = 0;
         this.spawned = false;
         this.wasOnGround = null;
+
+        this.debugFlying = false;
     }
 
     kill(x, y) {
@@ -3361,15 +3408,15 @@ class Player extends Actor {
     }
 
     onCollide(physObj) {
+        if (this.debugFlying) return false;
+
         const playerCollideFunction = physObj.onPlayerCollide();
         if (playerCollideFunction.includes("button")) {
             physObj.push();
         }
-        if (playerCollideFunction === "kill" && this.isTouching(physObj.getHitbox()) && this.deathFrames === 0) {
-            this.getLevel().killPlayer();
-        } else if (playerCollideFunction === "spring") {
+        if (playerCollideFunction === "spring") {
             physObj.bounceObj(this);
-        } else if (playerCollideFunction.includes("wall")) {
+        } else if (playerCollideFunction.includes("wall") && physObj.collidable) {
             if (physObj.collidable && physObj.isOnTopOf(this)
                 || (this.carrying && physObj.isOnTopOf(this.carrying))) {
                 if (playerCollideFunction.includes("throwable")) {
@@ -3385,11 +3432,13 @@ class Player extends Actor {
                     this.jumpJustPressed = 0;
                     this.xJustPressed = 0;
                 }
-            } else if (this.isOnTopOf(physObj) && physObj.collidable) {
-                console.log("e");
+            } else if (this.isOnTopOf(physObj)) {
                 this.setYVelocity(0);
                 this.getGame().resetFellHeight();
             }
+        } else if (playerCollideFunction === "kill" && this.isTouching(physObj.getHitbox()) && this.deathFrames === 0) {
+            this.getLevel().killPlayer();
+            return false;
         }
 
         return true;
@@ -3502,17 +3551,36 @@ class Player extends Actor {
     }
 
     setKeys(keys) {
+        if (this.debugFlying) {
+            if (keys["ArrowRight"]) {
+                this.setXVelocity(1);
+            } else if (keys["ArrowLeft"]) {
+                this.setXVelocity(-1);
+            } else {
+                this.setXVelocity(0);
+            }
+
+            if (keys["ArrowUp"]) {
+                this.setYVelocity(-1);
+            } else if (keys["ArrowDown"]) {
+                this.setYVelocity(1);
+            } else {
+                this.setYVelocity(0);
+            }
+        }
+
         const onGround = this.isOnGround();
+        const slidePressed = keys["KeyX"] && this.getGame().unlocks.SLIDE;
         if (this.respawnFrames === 0 && this.deathFrames === 0) {
             if (keys["KeyR"]) {
                 this.getLevel().killPlayer();
             }
             if (keys["ArrowRight"]) {
                 if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
-                this.setXVelocity(1);
+                this.setXVelocity(slidePressed ? 2 : 1);
             } else if (keys["ArrowLeft"]) {
                 if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
-                this.setXVelocity(-1);
+                this.setXVelocity(slidePressed ? -2 : -1);
             } else {
                 this.setXVelocity(0);
                 if (onGround) this.sprite.setRow(0);
@@ -3522,7 +3590,7 @@ class Player extends Actor {
             }
 
             const zPressed = this.getGame().unlocks.JUMP && keys["KeyZ"] && !this.prevZKey;
-            const xPressed = keys["KeyX"] && !this.prevXKey;
+            const xPressed = keys["KeyC"] && !this.prevXKey;
             //If z is pressed, jjp = 8, otherwise decr jjp if jjp > 0
             if (zPressed) {
                 this.jumpJustPressed = 8;
@@ -3540,8 +3608,9 @@ class Player extends Actor {
                 } else {
                     this.fall();
                     const t = this.getLevel().getThrowable();
+                    if (t == null) {
 
-                    if (t !== this.carrying && t.getYVelocity() > 0 && t.getYVelocity() > 0 && this.getHitbox().cloneOffset(Vector({
+                    } else if (t !== this.carrying && t.getYVelocity() > 0 && t.getYVelocity() > 0 && this.getHitbox().cloneOffset(Vector({
                         x: 0,
                         y: 3
                     })).isOverlap(t.getHitbox())) {
@@ -3595,7 +3664,7 @@ class Player extends Actor {
                 this.getGame().startScreenShake();
                 audioCon.playSoundEffect(THROW_SFX);
             }
-            this.prevXKey = keys["KeyX"];
+            this.prevXKey = keys["KeyC"];
             this.prevZKey = keys["KeyZ"];
         }
         this.wasOnGround = onGround;
@@ -3659,6 +3728,11 @@ class Button extends Solid {
         }
     }
 
+    deactivate() {
+        this.pushed = true;
+        this.collidable = false;
+    }
+
     draw() {
         super.draw(this.pushed ? "#404040" : "#e0e0e0");
     }
@@ -3677,7 +3751,7 @@ class BigButton extends Button {
         const heightFall = this.getGame().fellFromHeight;
         if (heightFall >= this.curHeightFall) {
             //super.push();
-            this.curHeightFall++;
+            this.curHeightFall = heightFall+1;
             this.onPush(this.curHeightFall);
             this.setHeight(this.baseHeight());
         }
@@ -3727,9 +3801,19 @@ let keys = {
     "ArrowUp": 0,
     "KeyZ": 0,
     "KeyX": 0,
-    // "KeyO": 0,
-    // "KeyP" : 0,
     "KeyC": 0,
+
+    //Debug keys
+    "KeyO": 0, //fly
+    "KeyH": 0, //jump
+    "KeyJ": 0,
+    "KeyK": 0,
+    "KeyL": 0,
+    "KeyI": 0,
+
+
+    // "KeyP" : 0,
+    "KeyQ": 0,
     "KeyR": 0,
     "Enter": 0,
 
