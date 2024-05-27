@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="db01e22c-b161-4b90-9bb7-2f4ff7a8198c" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/WallTiles.png" beforeDir="false" afterPath="$PROJECT_DIR$/images/WallTiles.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/WallTiles2.png" beforeDir="false" afterPath="$PROJECT_DIR$/images/WallTiles2.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/index.html" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/levels.js" beforeDir="false" afterPath="$PROJECT_DIR$/levels.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.js" beforeDir="false" afterPath="$PROJECT_DIR$/main.js" afterDir="false" />
@@ -88,11 +86,24 @@
       <workItem from="1711936175508" duration="48000" />
       <workItem from="1716661681406" duration="767000" />
       <workItem from="1716666613085" duration="27450000" />
-      <workItem from="1716739438407" duration="30016000" />
+      <workItem from="1716739438407" duration="45389000" />
+      <workItem from="1716824393092" duration="13112000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="javascript">
+          <url>file://$PROJECT_DIR$/main.js</url>
+          <line>6</line>
+          <properties lambdaOrdinal="-1" />
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>
