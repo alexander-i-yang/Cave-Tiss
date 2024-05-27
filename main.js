@@ -19,6 +19,7 @@ const PLAYER_GRAVITY_UP = 0.20;
 const PLAYER_GRAVITY_DOWN = 0.12;
 const PLAYER_JUMP_V = -2.5;
 const PLAYER_HITBOX_PIXEL_SIZE = [6, 6];
+const SLIDE_TIMER = 8;
 const MAXFALL = 3;
 const SPRING_SCALAR = 3.1;
 
@@ -29,12 +30,15 @@ function appr(val, target, amt) {
 const SPIKES_IMG = document.getElementById("spikes-img");
 const WALL_TILESHEET = document.getElementById("wall-tilesheet");
 const WALL_TILESHEET_OUTER = document.getElementById("wall-tilesheet-2");
+const WALL_TILESHEET_CORNER = document.getElementById("wall-tilesheet-corner");
+const SEMISOLID_TILESHEET = document.getElementById("semisolid-tilesheet");
 
 const ICE_TILESHEET = document.getElementById("ice-tilesheet");
 const ICE_TILESHEET_OUTER = document.getElementById("ice-tilesheet-2");
 
 const MAIN_CHARA_SPRITESHEET = document.getElementById("main-chara-spritesheet");
 const SPRING_SPRITESHEET = document.getElementById("spring-spritesheet");
+const SPIKE_SPRING_SPRITESHEET = document.getElementById("spike-spring-spritesheet");
 const SPAWN_SPRITESHEET = document.getElementById("spawn-spritesheet");
 const SKULL_IMG = document.getElementById("skull-img");
 const DIAMOND_IMG = document.getElementById("diamond-img");
@@ -457,6 +461,11 @@ function writeText(txt, size, pos, color, spacing) {
         }
         currX += size + addX + spacing;
     }
+}
+
+function drawPixel(x, y, color) {
+    CTX.fillStyle = color ? color : 'black';
+    CTX.fillRect(x + game.cameraOffset.x, y + game.cameraOffset.y, 1, 1);
 }
 
 const Vector = ({x, y}) => ({
@@ -1272,19 +1281,26 @@ class Game {
         this.levels = [];
         this.startTime = window.performance.now();
         this.lastFacing = VectorRight;
+        this.lastSliding = false;
+        this.map = new WorldMap(this);
         for (let levelInd = 0; levelInd < NUM_LEVELS; levelInd++) {
             let level = null;
             const sliceArr = TILEMAP_ARR.slice(levelInd * TILES_IN_LEVEL, (levelInd + 1) * TILES_IN_LEVEL);
             // if(levelInd === 0) {level = new StartScreen(sliceArr, this);}
+
+            const arrCopy = [...sliceArr];
             if (levelInd === NUM_LEVELS - 1) {
                 level = new EndScreen(sliceArr, this);
             } else {
                 level = new Level(sliceArr, this);
             }
+
+            this.map.pushMapSec(arrCopy, level.location, level);
+
             this.levels.push(level);
         }
         this.cameraOffset = Vector({x: 0, y: 0});
-        this.levelInd = 0;
+        this.levelInd = 3;
         this.deaths = 0;
 
         this.animFrame = 0;
@@ -1299,9 +1315,12 @@ class Game {
 
         this.fellFromHeight = 0;
 
+        this.debugFlying = false;
+
         this.unlocks = {
             JUMP: false,
             SLIDE: false,
+            DJ: false,
         }
     }
 
@@ -1310,7 +1329,9 @@ class Game {
     }
 
     drawCurrentLevel() {
+        if (this.levelInd === 6) this.map.draw();
         this.getCurrentLevel().drawAll();
+
         if (this.scoreboardFrames > 0) this.drawScoreboard();
         if (this.animFrame % 60 === 0) {
             this.secondsUntilBat -= 1;
@@ -1334,6 +1355,8 @@ class Game {
 
     onBigButtonPush(curHeight) {
         switch (curHeight) {
+            case 3:
+                this.unlocks.DJ = true;
             case 2:
                 this.unlocks.SLIDE = true;
             case 1:
@@ -1407,7 +1430,7 @@ class Game {
     setKeys(keys) {
         if (!optionsCon.showing) {
             if (keys["KeyO"] && !this.prevO) {
-                this.getPlayer().debugFlying = !this.getPlayer().debugFlying;
+                this.debugFlying = !this.debugFlying;
             }
             if (keys["KeyH"] && !this.prevH) {
                 this.unlocks.JUMP = !this.unlocks.JUMP;
@@ -1415,12 +1438,16 @@ class Game {
             if (keys["KeyJ"] && !this.prevJ) {
                 this.unlocks.SLIDE = !this.unlocks.SLIDE;
             }
+            if (keys["KeyK"] && !this.prevK) {
+                this.unlocks.DJ = !this.unlocks.DJ;
+            }
             if (keys["KeyI"] && !this.prevI) {
                 this.getCurrentLevel().onButtonPush();
             }
             this.prevO = keys["KeyO"];
             this.prevH = keys["KeyH"];
             this.prevJ = keys["KeyJ"];
+            this.prevK = keys["KeyK"];
             this.prevI = keys["KeyI"];
             this.prevS = keys["KeyP"];
             if (keys["KeyQ"]) {
@@ -1548,7 +1575,7 @@ class Game {
     }
 
     respawn() {
-        this.scoreboardFrames = 90;
+        // this.scoreboardFrames = 90;
     }
 
     onStickyLevel() {
@@ -1605,6 +1632,13 @@ const vecTilesOuter = [
     Vector({x: 1, y: 2}),
     null
 ];
+
+const vecTilesCorner = [
+    Vector({x: 0, y: 0}),
+    Vector({x: 1, y: 0}),
+    Vector({x: 0, y: 1}),
+    Vector({x: 1, y: 1}),
+]
 
 function convertWallTiles(arr) {
     let curInd = 0;
@@ -1666,10 +1700,101 @@ function convertWallTiles(arr) {
                     last = vecInds[vecInds.length - 1] + (outer ? 9 : 0) + tileCode;
                 }
 
-
                 arr[curInd] = last;
             }
             curInd += 1;
+        }
+    }
+
+    curInd = 0;
+    const arrCopy = [...arr]
+    for (let y = 0; y < TILE_MAP_SIZE[1]; y++) {
+        for (let x = 0; x < TILE_MAP_SIZE[0]; x++) {
+            const tileCode = arrCopy[curInd];
+            if (tileCode === 5) {
+                // const codeIsConnector = (t) => t <= 15 && t !== 5;
+
+                // const isWallLeft = codeIsConnector(x - 1 < 0 ? 5 : parseInt(arrCopy[xyToTileInd(x - 1, y)]));
+                // const isWallRight = codeIsConnector(x + 2 > TILE_MAP_SIZE[0] ? 5 : parseInt(arrCopy[xyToTileInd(x + 1, y)]));
+                // const isWallTop = codeIsConnector(y - 1 < 0 ? 5 : parseInt(arrCopy[xyToTileInd(x, y - 1)]));
+                // const isWallBottom = codeIsConnector(y + 2 > TILE_MAP_SIZE[1] ? 5 : parseInt(arrCopy[xyToTileInd(x, y + 1)]));
+
+                const left = x - 1 < 0 ? 5 : parseInt(arrCopy[xyToTileInd(x - 1, y)]);
+                const right = x + 2 > TILE_MAP_SIZE[0] ? 5 : parseInt(arrCopy[xyToTileInd(x + 1, y)]);
+                const top = y - 1 < 0 ? 5 : parseInt(arrCopy[xyToTileInd(x, y - 1)]);
+                const bottom = y + 2 > TILE_MAP_SIZE[1] ? 5 : parseInt(arrCopy[xyToTileInd(x, y + 1)]);
+                // if (!isWallTop && !isWallLeft) arr[curInd] = 77;
+                // if (!isWallTop && !isWallRight) arr[curInd] = 77;
+                if ((top === 6 || top === 3) && (right === 2 || right === 3)) arr[curInd] = 77;
+                if ((top === 4 || top === 1) && ((left === 2 || left === 1))) arr[curInd] = 76;
+                if ((bottom === 4 || bottom === 7) && ((left === 8 || left === 7))) arr[curInd] = 78;
+                if ((bottom === 6 || bottom === 9) && ((right === 8 || right === 9))) arr[curInd] = 79;
+
+            }
+            curInd++;
+        }
+    }
+}
+
+class WorldMap {
+    constructor(game) {
+        this.mapSections = [];
+        this.game = game;
+    }
+
+    pushMapSec(tileArr, location, level) {
+        this.mapSections.push(new MapSec(tileArr, this.game, level));
+    }
+
+    draw() {
+        const margin = 1;
+
+        const offset = Vector({x: 8, y: 34});
+        const roomsW = 4;
+        const roomsH = 3;
+
+        drawOnCanvas(new Rectangle(16+offset.x-1, offset.y+31, ((16+margin)*roomsW)+3, (16+margin)*roomsH+4), "#FFCCAA");
+        drawOnCanvas(new Rectangle(16+offset.x, offset.y+32, ((16+margin)*roomsW)+1, (16+margin)*roomsH+2), "#1E2B53");
+        this.mapSections.forEach(m => {
+            const x = m.level.location.x*(TILE_MAP_SIZE[0]+margin)+offset.x;
+            const y = m.level.location.y*(TILE_MAP_SIZE[1]+margin)+offset.y;
+            m.draw(x, y);
+        })
+    }
+}
+
+class MapSec {
+    constructor(tileArr, game, level) {
+        this.game = game;
+        this.pixels = [];
+        this.level = level;
+
+        this.convertToPixels(tileArr);
+    }
+
+    convertToPixels(tileArr) {
+        for (let t = 0; t < TILES_IN_LEVEL; t++) {
+            const tileCode = parseInt(tileArr[t]);
+            if (tileCode === 1) this.pixels.push("#5F574F");
+            // else if (52 <= tileCode && 55 >= tileCode) this.pixels.push("#FF004D");
+            else if (tileCode === 73) this.pixels.push("#AB5236");
+            else if (tileCode === 68) {
+                [t-16, t-15, t-14, t-13, t, t+1, t+2, t+3].forEach(bt => {
+                    this.pixels[bt] = "#FFEC27"
+                })
+                t += 4;
+            }
+            else this.pixels.push("#000000");
+        }
+    }
+
+    draw(offsetX, offsetY) {
+        let i = 0;
+        for (let y = 0; y < TILE_MAP_SIZE[1]; y++) {
+            for (let x = 0; x < TILE_MAP_SIZE[0]; x++) {
+                drawPixel(offsetX + x, offsetY + y, this.pixels[i]);
+                i++;
+            }
         }
     }
 }
@@ -1683,10 +1808,12 @@ class Level {
         let curTileMapInd = 0;
         this.game = game;
         this.nextDirection = Direction.NULL;
-        this.spawns = {};
         this.curSpawn;
+        this.spawn;
         this.switchBlocks = [];
         this.buttons = [];
+
+        let locationX; let locationY;
 
         convertWallTiles(tileArr);
 
@@ -1762,8 +1889,7 @@ class Level {
                         }
                         break;
                     case 16:
-                        const dir = codeToDirection(tileCode % 4);
-                        // this.spawns[dir] = new Spawn(gameSpaceX + 1, gameSpaceY);
+                        this.spawn = new Spawn(gameSpaceX + 1, gameSpaceY+2);
                         break;
                     case 17:
                         this.solids.push(new BigButton(
@@ -1784,7 +1910,14 @@ class Level {
                                 this.buttons.push(button);
                                 break;
                             case 73:
-                                this.solids.push(new Semisolid(gameSpaceX, gameSpaceY, 8, 3, true, this));
+                                const hasLeft = parseInt(tileArr[curTileMapInd-1]) === 73;
+                                const hasRight = parseInt(tileArr[curTileMapInd+1]) === 73;
+                                let v;
+                                if (hasLeft && hasRight) v = Vector({x:1, y:0});
+                                else if (hasLeft) v = Vector({x:2, y:0});
+                                else if (hasRight) v = Vector({x:0, y:0});
+
+                                this.solids.push(new Semisolid(gameSpaceX, gameSpaceY, 8, 3, this, new TileSprite(SEMISOLID_TILESHEET, v)));
                                 //this.solids.push(new Button(gameSpaceX, gameSpaceY, 3, 8, this, () => this.onButtonPush()));
                                 break;
                             case 74:
@@ -1797,10 +1930,23 @@ class Level {
                                 break;
                         }
                         break;
+                    case 19:
+                        vec = vecTilesCorner[tileCode % 4];
+                        this.solids.push(new Wall(gameSpaceX, gameSpaceY, TILE_SIZE, TILE_SIZE, this, WALL_TILESHEET_CORNER, vec));
+                        break;
+
+                    //Meta
                     case 64:
-                        //Meta
                         const height = tileCode % 4;
                         this.height = height;
+                        break;
+                    case 70:
+                    case 71:
+                        locationX = tileCode - 280;
+                        break;
+                    case 72:
+                    case 73:
+                        locationY = tileCode - 288;
                         break;
                     default:
                         break;
@@ -1808,6 +1954,8 @@ class Level {
             }
             curTileMapInd += 1;
         }
+
+        this.location = Vector({x: locationX, y: locationY});
         this.endLevelFrames = 0;
         this.opacity = 0;
     }
@@ -1816,7 +1964,7 @@ class Level {
         let x = playerPos.x, y = playerPos.y;
         switch (direction) {
             case Direction.NORTH:
-                y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 9;
+                y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 11;
                 break;
             case Direction.SOUTH:
                 y = 1;
@@ -1831,6 +1979,8 @@ class Level {
                 console.log("Error: bad direction");
                 break;
         }
+
+        y = y - y % TILE_SIZE + 2;
 
         this.currentSpawn = Vector({x: x, y: y});
         //this.currentSpawn = this.spawns[direction];
@@ -1897,6 +2047,18 @@ class Level {
         this.dustSprites.push(g);
     }
 
+    newGhostSpring(playerX, playerY) {
+        this.solids.push(new GhostSpring(playerX, playerY+6, TILE_SIZE - 3, 3, VectorUp, this));
+        // this.actors.push(new Spring(gameSpaceX, gameSpaceY + TILE_SIZE - 3, TILE_SIZE, 3, direction, this));
+    }
+
+    removeGhostSpring(g) {
+        const index = this.solids.indexOf(g);
+        if (index > -1) {
+            this.solids.splice(index, 1);
+        }
+    }
+
     removeDecoration(d) {
         const index = this.decorations.findIndex(de => de.id === d.id);
         if (index > -1) {
@@ -1938,10 +2100,10 @@ class Level {
         if (this.checkPlayerFallDeath() && this.player.deathFrames <= 0 && !this.checkNextLevel()) {
             this.killPlayer();
         }
-        if (!this.faded && game.onStickyLevel() && game.getCurrentLevel() === this && this.player.getX() > 80) {
+        /*if (!this.faded && game.onStickyLevel() && game.getCurrentLevel() === this && this.player.getX() > 80) {
             this.faded = true;
             audioCon.fadeOutSong(750);
-        }
+        }*/
         if (this.endLevelFrames > 1) {
             this.endLevelFrames -= 1;
             this.fade(1 - this.endLevelFrames / 32);
@@ -1972,6 +2134,28 @@ class Level {
         let ret = null;
         this.solids.some(solid => {
             if ((solid.onPlayerCollide().includes("wall")) && actor.isUnder(solid)) {
+                ret = solid;
+                return true;
+            }
+        });
+        return ret;
+    }
+
+    isLeftOfWall(actor) {
+        let ret = null;
+        this.solids.some(solid => {
+            if ((solid.onPlayerCollide().includes("wall")) && actor.isLeftOf(solid)) {
+                ret = solid;
+                return true;
+            }
+        });
+        return ret;
+    }
+
+    isRightOfWall(actor) {
+        let ret = null;
+        this.solids.some(solid => {
+            if ((solid.onPlayerCollide().includes("wall")) && actor.isRightOf(solid)) {
                 ret = solid;
                 return true;
             }
@@ -2027,8 +2211,8 @@ class Level {
         });
 
         if (this.currentSpawn == null) {
-            // this.currentSpawn = Vector({x: 9, y: 104});
-            this.currentSpawn = Vector({x: 9, y: 110});
+            this.currentSpawn = Vector({x: 9, y: 104});
+            // this.currentSpawn = Vector({x: 64, y: 80});
         }
 
         if (this.player == null) {
@@ -2037,12 +2221,16 @@ class Level {
             newActors.push(this.player);
         }
 
-        if (transitioning) this.player.respawnFrames = 0;
+        if (transitioning) {
+            this.player.respawnFrames = 0;
+            this.player.sliding = this.game.lastSliding;
+        } else {
+            this.currentSpawn = Vector({x: this.spawn.x, y: this.spawn.y});
+        }
         this.player.setX(this.currentSpawn.x);
         this.player.setY(this.currentSpawn.y);
         this.player.spawn = this.currentSpawn;
         this.player.facing = this.game.lastFacing;
-        console.log(this.game);
 
         this.endLevelFrames = 0;
         this.actors = newActors;
@@ -2406,6 +2594,7 @@ class PhysObj {
         } else {
             this.hitbox = new Hitbox(x, y, w, h);
         }
+        this.direction = direction;
         this.level = level;
         this.collidable = collidable;
         this.velocity = Vector({x: 0, y: 0});
@@ -2891,8 +3080,9 @@ class Wall extends Solid {
 }
 
 class Semisolid extends Solid {
-    draw() {
-        super.draw("#2b180d");
+    constructor(x, y, w, h, level, tileSprite) {
+        super(x, y, w, h, true, level);
+        super.setSprite(tileSprite);
     }
 
     onPlayerCollide() {
@@ -2978,7 +3168,30 @@ class Spring extends Actor {
         //     this.getLevel().pushDustSprite(new SpringDustSprite(this.getX(), this.getY(), 1, 1, Vector({x:vx, y:vy}), this.level));
         // }
     }
+
+    canPassThrough(p) {
+        if (p.getXVelocity() * this.direction.x + p.getYVelocity() * this.direction.y > 0) {
+            return false;
+        }
+        return true;
+    }
 }
+
+/*class GhostSpring extends Spring {
+    constructor(x, y, w, h, direction, level) {
+        super(x, y, w, h, direction, level);
+        console.log(x + " " + y);
+        this.setX(x);
+        this.setY(y);
+        this.width = w;
+        this.height = h;
+    }
+
+    bounceObj(physObj) {
+        super.bounceObj(physObj);
+        this.getLevel().removeGhostSpring(this);
+    }
+}*/
 
 class PlayerKill extends Solid {
     constructor(x, y, w, h, level, direction) {
@@ -3000,6 +3213,13 @@ class PlayerKill extends Solid {
 
     updatePhysicsPos() {
         super.updatePhysicsPos();
+    }
+
+    shouldKill(p) {
+        if (p.getXVelocity() * this.direction.x + p.getYVelocity() * this.direction.y > 0) {
+            return false;
+        }
+        return true;
     }
 }
 
@@ -3171,11 +3391,6 @@ class Throwable extends Actor {
                     }
                     this.setYVelocity(this.isOnGround().getYVelocity() * 0.9);
 
-                }
-                if (this.getY() > PIXEL_GAME_SIZE[1]) {
-                    if (this.getLevel().getPlayer().respawnFrames === 0) {
-                        super.getLevel().killPlayer(this.getX(), this.getY());
-                    }
                 }
             }
             if (this.getSprite().update) this.getSprite().update();
@@ -3399,8 +3614,8 @@ class Player extends Actor {
         this.wasOnGround = null;
 
         this.sliding = false;
-
-        this.debugFlying = false;
+        this.slideTimer = -1;
+        this.slideBumpFrames = 0;
     }
 
     kill(x, y) {
@@ -3419,14 +3634,15 @@ class Player extends Actor {
     }
 
     onCollide(physObj) {
-        if (this.debugFlying) return false;
+        if (this.getGame().debugFlying) return false;
 
         const playerCollideFunction = physObj.onPlayerCollide();
         if (playerCollideFunction.includes("button")) {
             physObj.push();
         }
-        if (playerCollideFunction === "spring") {
+        if (playerCollideFunction === "spring" && physObj.canPassThrough(this)) {
             physObj.bounceObj(this);
+            this.canDoubleJump = true;
         } else if (playerCollideFunction.includes("wall") && physObj.collidable) {
             if (physObj.collidable && physObj.isOnTopOf(this) || (this.carrying && physObj.isOnTopOf(this.carrying))) {
                 if (playerCollideFunction.includes("throwable")) {
@@ -3444,11 +3660,15 @@ class Player extends Actor {
                 }
             } else if (this.isOnTopOf(physObj)) {
                 this.setYVelocity(0);
-                this.getGame().resetFellHeight();
-            } else if (this.isLeftOf(physObj) || this.isRightOf(physObj)) {
-                this.sliding = false;
+            } else if (this.sliding && (this.isLeftOf(physObj) || this.isRightOf(physObj)) && this.slideTimer <= 0) {
+                this.slideTimer = SLIDE_TIMER;
+                // this.slideBumpFrames = 6;
+                // this.slideBump(this.facing);
+                // this.sliding = false;
             }
         } else if (playerCollideFunction === "kill" && this.isTouching(physObj.getHitbox()) && this.deathFrames === 0) {
+            if (this.sliding && physObj.direction === VectorUp) return false;
+            if (!physObj.shouldKill(this)) return false;
             this.getLevel().killPlayer();
             return false;
         }
@@ -3537,6 +3757,11 @@ class Player extends Actor {
         audioCon.playSoundEffect(JUMP_SFX);
     }
 
+    doubleJump() {
+        this.setYVelocity(-2);
+        this.canDoubleJump = false;
+    }
+
     isOverlap(physObj, offset) {
         const norm = super.isOverlap(physObj, offset);
         if (this.carrying) {
@@ -3563,19 +3788,19 @@ class Player extends Actor {
     }
 
     setKeys(keys) {
-        if (this.debugFlying) {
+        if (this.getGame().debugFlying) {
             if (keys["ArrowRight"]) {
-                this.setXVelocity(1);
+                this.setXVelocity(8);
             } else if (keys["ArrowLeft"]) {
-                this.setXVelocity(-1);
+                this.setXVelocity(-8);
             } else {
                 this.setXVelocity(0);
             }
 
             if (keys["ArrowUp"]) {
-                this.setYVelocity(-1);
+                this.setYVelocity(-2);
             } else if (keys["ArrowDown"]) {
-                this.setYVelocity(1);
+                this.setYVelocity(2);
             } else {
                 this.setYVelocity(0);
             }
@@ -3584,18 +3809,21 @@ class Player extends Actor {
         const onGround = this.isOnGround();
         const slidePressed = keys["KeyX"] && this.getGame().unlocks.SLIDE;
 
-        if (onGround && slidePressed) {
-            this.sliding = true;
-            this.setXVelocity(this.facing.x * 2);
-        } else if (!onGround && !slidePressed) {
-            this.sliding = false;
-        }
-
         if (this.respawnFrames === 0 && this.deathFrames === 0) {
+            if (slidePressed && onGround) {
+                this.sliding = true;
+            }
+
+            if (onGround && !onGround.onPlayerCollide().includes("button")) this.getGame().resetFellHeight();
+
             if (keys["KeyR"]) {
                 this.getLevel().killPlayer();
             }
-            if (!this.sliding) {
+            if (this.sliding) {
+                this.setXVelocity(this.facing.x * 2);
+            } else if (this.slideBumpFrames > 0) {
+                this.setXVelocity(this.slideBumpFacing.x * -1);
+            } else {
                 if (keys["ArrowRight"]) {
                     if (this.sprite.getRow() === 0 && onGround) this.sprite.setRow(1);
                     this.setXVelocity(1);
@@ -3627,6 +3855,8 @@ class Player extends Actor {
             if (!onGround) {
                 if (this.coyoteTime > 0 && zPressed) {
                     this.jump();
+                } else if (zPressed && this.canDoubleJump && this.getGame().unlocks.DJ) {
+                    this.doubleJump();
                 } else {
                     this.fall();
                     const t = this.getLevel().getThrowable();
@@ -3648,6 +3878,7 @@ class Player extends Actor {
                 }
             } else {
                 this.coyoteTime = 8;
+                this.canDoubleJump = true;
                 if (this.jumpJustPressed > 0) {
                     //Jump if jjp and on ground now
                     this.jump();
@@ -3661,6 +3892,7 @@ class Player extends Actor {
                     }
                 }
             }
+
             if (this.coyoteTime > 0) {
                 this.coyoteTime -= 1;
             }
@@ -3686,6 +3918,21 @@ class Player extends Actor {
                 this.getGame().startScreenShake();
                 audioCon.playSoundEffect(THROW_SFX);
             }
+            if (this.slideTimer > 1)  {
+                if (!this.getLevel().isLeftOfWall(this) && !this.getLevel().isRightOfWall(this)) {
+                    this.slideTimer = 0;
+                }
+                this.slideTimer--;
+            } else if (this.slideTimer === 1) {
+                this.sliding = false;
+                this.slideTimer = 0;
+            }
+
+            if (this.slideBumpFrames > 0)  {
+                this.slideBumpFrames--;
+                this.setYVelocity(-0.7);
+            }
+
             this.prevXKey = keys["KeyC"];
             this.prevZKey = keys["KeyZ"];
         }
@@ -3702,15 +3949,21 @@ class Player extends Actor {
             }
         } else {
             super.updatePhysicsPos();
-            if (this.velocity.x > 0) {
-                this.facing = VectorRight;
-                this.getSprite().flip = true;
+
+            if (this.slideBumpFrames === 0) {
+                if (this.velocity.x > 0) {
+                    this.facing = VectorRight;
+                    this.getSprite().flip = true;
+                }
+                if (this.velocity.x < 0) {
+                    this.facing = VectorLeft;
+                    this.getSprite().flip = false;
+                }
+                this.getGame().lastFacing = this.facing;
+
             }
-            if (this.velocity.x < 0) {
-                this.facing = VectorLeft;
-                this.getSprite().flip = false;
-            }
-            this.getGame().lastFacing = this.facing;
+
+            this.getGame().lastSliding = this.sliding;
         }
     }
 
@@ -3718,6 +3971,10 @@ class Player extends Actor {
         return this.carrying;
     }
 
+    slideBump(facing) {
+        this.slideBumpFacing = facing;
+        this.slideBumpFrames = 8;
+    }
 }
 
 class SwitchBlock extends Solid {
