@@ -1,3 +1,7 @@
+// If you're looking at the code, that's awesome! Leave a comment on Itch if you need help!
+// (You can also find the repo at https://github.com/alexander-i-yang/Cave-Toss/tree/ascend)
+// From Yam (the Dev)
+
 const canvas = document.createElement("canvas");
 const PIXEL_GAME_SIZE = [128, 128];
 canvas.width = PIXEL_GAME_SIZE[0];
@@ -44,9 +48,9 @@ const DEATH_SPRITESHEET = document.getElementById("death-spritesheet");
 const TITLE_IMG = document.getElementById("title-img");
 const ARROW_IMG = document.getElementById("arrow-img");
 
-//https://www.storyblocks.com/audio/stock/elements-bbxlm-midkfpeo12h.html
-//https://www.storyblocks.com/audio/stock/science-background-348772719.html
 //https://www.storyblocks.com/audio/stock/rainforest-bfw7-_sjvkcm8i51u.html
+
+//https://freesound.org/people/Sheyvan/sounds/475226/
 
 const START_ANIM_FRAMES = 180;
 const START_ANIM_OFFSET_FRAMES = 60;
@@ -555,6 +559,14 @@ const UNLOCK_SFX = new Howl({
 	src: ['sfx/unlock.ogg'], loop: false,
 });
 
+const BUTTON_SFX = new Howl({
+	src: ['sfx/button2.ogg'], loop: false,
+});
+
+const BIG_BUTTON_SFX = new Howl({
+	src: ['sfx/bigButton.ogg'], loop: false,
+});
+
 const PING_SFX = new Howl({
 	src: ['sfx/Ping.wav'], loop: false,
 });
@@ -602,7 +614,6 @@ class AudioController {
 	}
 
 	playSong(song) {
-		console.log(song._src);
 		this.nowPlaying = song._src;
 		song.volume(this.getMaxVolume(song) * this.musicVolume);
 		this.curSongId = song.play();
@@ -1314,7 +1325,8 @@ class Game {
 			this.levels.push(level);
 		}
 		this.cameraOffset = Vector({x: 0, y: 0});
-		this.levelInd =13;
+		this.levelInd =11;
+		this.visitedLevels[this.levelInd] = true;
 		this.deaths = 0;
 
 		this.animFrame = 0;
@@ -1336,7 +1348,7 @@ class Game {
 			SLIDE: true,
 			DJ: true,
 		}*/
-
+		this.unlockScreen = new UnlockScreen(this);
 		this.unlocks = {
 			JUMP: false,
 			SLIDE: false,
@@ -1352,9 +1364,12 @@ class Game {
 
 	drawCurrentLevel() {
 		this.getCurrentLevel().drawAll();
-		if (this.levelInd === 6) this.map.draw();
+		this.unlockScreen.draw();
 
-		if (this.scoreboardFrames > 0) this.drawScoreboard();
+		if (this.scoreboardFrames > 0) {
+			this.drawScoreboard();
+		}
+		if (this.showMap) this.map.draw();
 		if (this.animFrame % 60 === 0) {
 			this.secondsUntilBat -= 1;
 		}
@@ -1376,6 +1391,8 @@ class Game {
 	}
 
 	onBigButtonPush(curHeight) {
+		audioCon.playSoundEffect(BIG_BUTTON_SFX);
+
 		switch (curHeight) {
 			case 3:
 				this.unlocks.DJ = true;
@@ -1488,6 +1505,9 @@ class Game {
 			this.prevS = keys["KeyP"];
 			if (keys["KeyC"]) {
 				this.scoreboardFrames += 1;
+				this.showMap = true;
+			} else {
+				this.showMap = false;
 			}
 			this.getCurrentLevel().setKeys(keys);
 		} else {
@@ -1547,7 +1567,7 @@ class Game {
         }*/
 		this.getCurrentLevel().setCurrentSpawn(direction, playerPos);
 		this.getCurrentLevel().resetStage(true);
-		if (direction === Direction.NORTH) this.getPlayer().setYVelocity(-0.5);
+		if (direction === Direction.NORTH) this.getPlayer().setYVelocity(this.lastYVelocity);
 
 		this.respawn();
 		if (this.onLastLevel()) {
@@ -1778,6 +1798,32 @@ function convertWallTiles(arr) {
 	}
 }
 
+class UnlockScreen {
+	constructor() {
+		this.pos = Vector({x: 0, y: 0});
+		this.rect = new Rectangle(this.pos.x, this.pos.y, 64, 64);
+		this.color = "#00000030";
+	}
+
+	drawText() {
+		const e = 0;
+		let text;
+		let offset;
+		switch (e) {
+			case 0:
+				text = "Hello";
+
+				writeText("Hello", 1, this.pos.addPoint(), "white");
+				break;
+		}
+	}
+
+	draw() {
+		// drawOnCanvas(this.rect, this.color);
+		// this.drawText();
+	}
+}
+
 class WorldMap {
 	constructor(game) {
 		this.mapSections = [];
@@ -1794,9 +1840,6 @@ class WorldMap {
 		const offset = Vector({x: 5, y: 14});
 		const roomsW = 5;
 		const roomsH = 4;
-
-		const textPos = Vector({x: offset.x + 32, y: offset.y + roomsH*17+25})
-		// writeText("HOLD C FOR MAP", 1, textPos, "white");
 
 		drawOnCanvas(new Rectangle(16 + offset.x - 1, offset.y + 15, ((16 + margin) * roomsW) + 3, (16 + margin) * roomsH + 3), "#FFCCAA");
 		drawOnCanvas(new Rectangle(16 + offset.x, offset.y + 16, ((16 + margin) * roomsW) + 1, (16 + margin) * roomsH + 1), "#1E2B53");
@@ -1856,6 +1899,11 @@ class MapSec {
 				i++;
 			}
 		}
+
+		if (this.level.myLevelInd === this.game.levelInd) {
+			const p = this.level.getPlayer();
+			drawPixel(offsetX + Math.floor(p.getX() /TILE_SIZE), offsetY + Math.floor(p.getY() /TILE_SIZE), "#ff0000")
+		}
 	}
 }
 
@@ -1902,7 +1950,7 @@ class Level {
 						this.solids.push(new Wall(gameSpaceX, gameSpaceY, TILE_SIZE, TILE_SIZE, this, tilesheet, vec));
 						break;
 					case 5:
-						this.solids.push(new PlayerKill(gameSpaceX + 1, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE - 2, 2, this, direction));
+						this.solids.push(new PlayerKill(gameSpaceX, gameSpaceY + TILE_SIZE / 2 + 2, TILE_SIZE, 2, this, direction));
 						break;
 					case 6:
 					case 7:
@@ -2026,7 +2074,7 @@ class Level {
 		let x = playerPos.x, y = playerPos.y;
 		switch (direction) {
 			case Direction.NORTH:
-				y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 11;
+				y = PIXEL_GAME_SIZE[1] - PLAYER_HITBOX_PIXEL_SIZE[0] - 3;
 				break;
 			case Direction.SOUTH:
 				y = 1;
@@ -2061,8 +2109,9 @@ class Level {
 		if (this.throwable) this.throwable.draw();
 		this.player.draw();
 		this.dustSprites.forEach(i => i.draw());
+		// writeText("HOLD C FOR MAP", 1, textPos, "white");
+		if (this.myLevelInd === 6) writeText("Hold c for map", 1, Vector({x: 32, y:32}), "white");
 		this.drawFade();
-
 	}
 
 	spawnBat() {
@@ -2103,6 +2152,7 @@ class Level {
 		if (this.getGame().levelInd === 1) {
 			this.getGame().bigUnlocked = true;
 		}
+		audioCon.playSoundEffect(BUTTON_SFX);
 	}
 
 	pushDecoration(d) {
@@ -2347,7 +2397,7 @@ class Level {
 
 	nextLevelDir() {
 		if (this.player.getX() <= 0) return Direction.WEST;
-		if (this.player.getY() <= 0) return Direction.NORTH;
+		if (this.player.getY() <= -3) return Direction.NORTH;
 		if (this.player.getX() + this.player.getWidth() >= PIXEL_GAME_SIZE[0]) return Direction.EAST;
 		if (this.player.getY() > PIXEL_GAME_SIZE[1]) return Direction.SOUTH;
 		return Direction.NULL;
@@ -3167,8 +3217,11 @@ class Semisolid extends Solid {
 	}
 
 	onPlayerCollide() {
-		// if (this.getLevel().getPlayer().isOnTopOf(this)) return "nah";
-		return "wall";
+		const p = this.level.getPlayer();
+		const b = p.getY() + p.getHeight() <= this.getY();
+		if (b) return "wall";
+		if (p.isTouching(this.getHitbox())) console.trace();
+		return "semi";
 	}
 }
 
@@ -3752,7 +3805,7 @@ class Player extends Actor {
 			if (!physObj.shouldKill(this)) return false;
 			this.getLevel().killPlayer();
 			return false;
-		}
+		} else if (playerCollideFunction === "semi") return false;
 
 		return true;
 	}
@@ -4046,6 +4099,7 @@ class Player extends Actor {
 			}
 
 			this.getGame().lastSliding = this.sliding;
+			this.getGame().lastYVelocity = this.getYVelocity();
 		}
 	}
 
